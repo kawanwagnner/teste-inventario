@@ -16,7 +16,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
-import * as XLSX from "xlsx";
+import * as XLSXStyle from "xlsx-js-style";
 
 // === Types ===
 export type InventoryRow = {
@@ -85,25 +85,95 @@ function toCSV(rows: InventoryRow[]): string {
 }
 
 function toXLSXBlob(rows: InventoryRow[]): Blob {
-  const wb = XLSX.utils.book_new();
+  const wb = XLSXStyle.utils.book_new();
+
+  // Estilos
+  const headerStyle = {
+    font: { bold: true, color: { rgb: "FFFFFF" }, sz: 12 },
+    fill: { fgColor: { rgb: "4472C4" } },
+    alignment: { horizontal: "center", vertical: "center" },
+    border: {
+      top: { style: "thin", color: { rgb: "000000" } },
+      bottom: { style: "thin", color: { rgb: "000000" } },
+      left: { style: "thin", color: { rgb: "000000" } },
+      right: { style: "thin", color: { rgb: "000000" } },
+    },
+  };
+
+  const dataStyle = {
+    alignment: { horizontal: "left", vertical: "center" },
+    border: {
+      top: { style: "thin", color: { rgb: "D0D0D0" } },
+      bottom: { style: "thin", color: { rgb: "D0D0D0" } },
+      left: { style: "thin", color: { rgb: "D0D0D0" } },
+      right: { style: "thin", color: { rgb: "D0D0D0" } },
+    },
+  };
+
+  const metricHeaderStyle = {
+    font: { bold: true, sz: 11 },
+    fill: { fgColor: { rgb: "E7E6E6" } },
+    alignment: { horizontal: "left", vertical: "center" },
+  };
+
+  const metricValueStyle = {
+    font: { sz: 11 },
+    alignment: { horizontal: "center", vertical: "center" },
+    fill: { fgColor: { rgb: "F2F2F2" } },
+  };
+
+  const titleStyle = {
+    font: { bold: true, sz: 14, color: { rgb: "203764" } },
+    alignment: { horizontal: "left", vertical: "center" },
+  };
 
   // === ABA 1: DADOS COMPLETOS ===
   const data = rows.map((r) => ({
     EQUIPAMENTO: r.equip || "-",
-    PATRIMONIO: r.patrimonio || "-",
+    PATRIMÔNIO: r.patrimonio || "-",
     LOCAL: r.local || "-",
     FABRICANTE: r.fabricante || "-",
     MODELO: r.modelo || "-",
-    USUARIO: r.usuario || "-",
-    CRIADO_EM: new Date(r.createdAt).toLocaleString("pt-BR"),
+    USUÁRIO: r.usuario || "-",
+    "CRIADO EM": new Date(r.createdAt).toLocaleString("pt-BR"),
   }));
-  const ws1 = XLSX.utils.json_to_sheet(data);
-  const cols1 = Object.keys(data[0] || {}).map((k) => ({
-    wch:
-      Math.max(k.length, ...data.map((row: any) => String(row[k]).length)) + 2,
-  }));
-  ws1["!cols"] = cols1;
-  XLSX.utils.book_append_sheet(wb, ws1, "Inventário Completo");
+
+  const ws1 = XLSXStyle.utils.json_to_sheet(data);
+
+  // Aplicar largura das colunas
+  ws1["!cols"] = [
+    { wch: 18 }, // EQUIPAMENTO
+    { wch: 15 }, // PATRIMÔNIO
+    { wch: 20 }, // LOCAL
+    { wch: 15 }, // FABRICANTE
+    { wch: 25 }, // MODELO
+    { wch: 20 }, // USUÁRIO
+    { wch: 22 }, // CRIADO EM
+  ];
+
+  // Aplicar estilo ao cabeçalho (linha 1)
+  const headerCells = ["A1", "B1", "C1", "D1", "E1", "F1", "G1"];
+  headerCells.forEach((cell) => {
+    if (ws1[cell]) {
+      ws1[cell].s = headerStyle;
+    }
+  });
+
+  // Aplicar estilo às células de dados
+  const range = XLSXStyle.utils.decode_range(ws1["!ref"] || "A1");
+  for (let R = range.s.r + 1; R <= range.e.r; ++R) {
+    for (let C = range.s.c; C <= range.e.c; ++C) {
+      const cellAddress = XLSXStyle.utils.encode_cell({ r: R, c: C });
+      if (ws1[cellAddress]) {
+        ws1[cellAddress].s = dataStyle;
+      }
+    }
+  }
+
+  // Adicionar filtro automático
+  ws1["!autofilter"] = { ref: `A1:G${rows.length + 1}` };
+
+  XLSXStyle.utils.book_append_sheet(wb, ws1, "📊 Inventário Completo");
 
   // === ABA 2: MÉTRICAS GERAIS ===
   const totalItems = rows.length;
@@ -131,32 +201,82 @@ function toXLSXBlob(rows: InventoryRow[]): Blob {
     { MÉTRICA: "Total de Equipamentos", VALOR: totalEquipments },
     { MÉTRICA: "Pessoas com Equipamentos", VALOR: uniqueUsers },
     { MÉTRICA: "", VALOR: "" },
-    { MÉTRICA: "=== EQUIPAMENTOS POR TIPO ===", VALOR: "" },
+    { MÉTRICA: "EQUIPAMENTOS POR TIPO", VALOR: "" },
     ...Object.entries(equipCount).map(([equip, count]) => ({
-      MÉTRICA: equip,
+      MÉTRICA: `  ${equip}`,
       VALOR: count,
     })),
     { MÉTRICA: "", VALOR: "" },
-    { MÉTRICA: "=== EQUIPAMENTOS POR LOCAL ===", VALOR: "" },
+    { MÉTRICA: "EQUIPAMENTOS POR LOCAL", VALOR: "" },
     ...Object.entries(locationCount).map(([local, count]) => ({
-      MÉTRICA: local,
+      MÉTRICA: `  ${local}`,
       VALOR: count,
     })),
   ];
 
-  const ws2 = XLSX.utils.json_to_sheet(metricsData);
-  ws2["!cols"] = [{ wch: 35 }, { wch: 15 }];
-  XLSX.utils.book_append_sheet(wb, ws2, "Métricas Gerais");
+  const ws2 = XLSXStyle.utils.json_to_sheet(metricsData);
+  ws2["!cols"] = [{ wch: 40 }, { wch: 18 }];
+
+  // Estilizar cabeçalho
+  if (ws2["A1"]) ws2["A1"].s = headerStyle;
+  if (ws2["B1"]) ws2["B1"].s = headerStyle;
+
+  // Estilizar dados
+  const range2 = XLSXStyle.utils.decode_range(ws2["!ref"] || "A1");
+  for (let R = range2.s.r + 1; R <= range2.e.r; ++R) {
+    const cellA = `A${R + 1}`;
+    const cellB = `B${R + 1}`;
+
+    if (ws2[cellA]) {
+      const value = ws2[cellA].v;
+      // Títulos de seção
+      if (
+        typeof value === "string" &&
+        (value.includes("POR TIPO") || value.includes("POR LOCAL"))
+      ) {
+        ws2[cellA].s = titleStyle;
+      }
+      // Primeiras 3 linhas (métricas principais)
+      else if (R >= 1 && R <= 3) {
+        ws2[cellA].s = metricHeaderStyle;
+        if (ws2[cellB]) ws2[cellB].s = metricValueStyle;
+      }
+      // Outras linhas
+      else {
+        ws2[cellA].s = dataStyle;
+        if (ws2[cellB]) ws2[cellB].s = dataStyle;
+      }
+    }
+  }
+
+  XLSXStyle.utils.book_append_sheet(wb, ws2, "📈 Métricas Gerais");
 
   // === ABA 3: EQUIPAMENTOS POR TIPO ===
   const equipByType = Object.entries(equipCount)
-    .map(([tipo, total]) => ({ TIPO_EQUIPAMENTO: tipo, QUANTIDADE: total }))
+    .map(([tipo, total]) => ({
+      "TIPO DE EQUIPAMENTO": tipo,
+      QUANTIDADE: total,
+    }))
     .sort((a, b) => b.QUANTIDADE - a.QUANTIDADE);
 
   if (equipByType.length > 0) {
-    const ws3 = XLSX.utils.json_to_sheet(equipByType);
-    ws3["!cols"] = [{ wch: 20 }, { wch: 12 }];
-    XLSX.utils.book_append_sheet(wb, ws3, "Por Tipo");
+    const ws3 = XLSXStyle.utils.json_to_sheet(equipByType);
+    ws3["!cols"] = [{ wch: 25 }, { wch: 15 }];
+
+    // Estilizar cabeçalho
+    if (ws3["A1"]) ws3["A1"].s = headerStyle;
+    if (ws3["B1"]) ws3["B1"].s = headerStyle;
+
+    // Estilizar dados
+    const range3 = XLSXStyle.utils.decode_range(ws3["!ref"] || "A1");
+    for (let R = range3.s.r + 1; R <= range3.e.r; ++R) {
+      const cellA = `A${R + 1}`;
+      const cellB = `B${R + 1}`;
+      if (ws3[cellA]) ws3[cellA].s = dataStyle;
+      if (ws3[cellB]) ws3[cellB].s = dataStyle;
+    }
+
+    XLSXStyle.utils.book_append_sheet(wb, ws3, "🔧 Por Tipo");
   }
 
   // === ABA 4: EQUIPAMENTOS POR LOCAL ===
@@ -180,9 +300,26 @@ function toXLSXBlob(rows: InventoryRow[]): Blob {
   });
 
   if (equipByLocation.length > 0) {
-    const ws4 = XLSX.utils.json_to_sheet(equipByLocation);
-    ws4["!cols"] = [{ wch: 20 }, { wch: 20 }, { wch: 12 }];
-    XLSX.utils.book_append_sheet(wb, ws4, "Por Local");
+    const ws4 = XLSXStyle.utils.json_to_sheet(equipByLocation);
+    ws4["!cols"] = [{ wch: 25 }, { wch: 22 }, { wch: 15 }];
+
+    // Estilizar cabeçalho
+    if (ws4["A1"]) ws4["A1"].s = headerStyle;
+    if (ws4["B1"]) ws4["B1"].s = headerStyle;
+    if (ws4["C1"]) ws4["C1"].s = headerStyle;
+
+    // Estilizar dados
+    const range4 = XLSXStyle.utils.decode_range(ws4["!ref"] || "A1");
+    for (let R = range4.s.r + 1; R <= range4.e.r; ++R) {
+      const cellA = `A${R + 1}`;
+      const cellB = `B${R + 1}`;
+      const cellC = `C${R + 1}`;
+      if (ws4[cellA]) ws4[cellA].s = dataStyle;
+      if (ws4[cellB]) ws4[cellB].s = dataStyle;
+      if (ws4[cellC]) ws4[cellC].s = dataStyle;
+    }
+
+    XLSXStyle.utils.book_append_sheet(wb, ws4, "📍 Por Local");
   }
 
   // === ABA 5: EQUIPAMENTOS POR USUÁRIO ===
@@ -202,16 +339,33 @@ function toXLSXBlob(rows: InventoryRow[]): Blob {
 
   const userEquipData = Object.entries(userEquipments)
     .map(([usuario, data]) => ({
-      USUARIO: usuario,
-      TOTAL_EQUIPAMENTOS: data.total,
-      EQUIPAMENTOS: data.equipamentos.join(", "),
+      USUÁRIO: usuario,
+      "TOTAL DE EQUIPAMENTOS": data.total,
+      "LISTA DE EQUIPAMENTOS": data.equipamentos.join(", "),
     }))
-    .sort((a, b) => b.TOTAL_EQUIPAMENTOS - a.TOTAL_EQUIPAMENTOS);
+    .sort((a, b) => b["TOTAL DE EQUIPAMENTOS"] - a["TOTAL DE EQUIPAMENTOS"]);
 
   if (userEquipData.length > 0) {
-    const ws5 = XLSX.utils.json_to_sheet(userEquipData);
-    ws5["!cols"] = [{ wch: 25 }, { wch: 18 }, { wch: 40 }];
-    XLSX.utils.book_append_sheet(wb, ws5, "Por Usuário");
+    const ws5 = XLSXStyle.utils.json_to_sheet(userEquipData);
+    ws5["!cols"] = [{ wch: 28 }, { wch: 20 }, { wch: 45 }];
+
+    // Estilizar cabeçalho
+    if (ws5["A1"]) ws5["A1"].s = headerStyle;
+    if (ws5["B1"]) ws5["B1"].s = headerStyle;
+    if (ws5["C1"]) ws5["C1"].s = headerStyle;
+
+    // Estilizar dados
+    const range5 = XLSXStyle.utils.decode_range(ws5["!ref"] || "A1");
+    for (let R = range5.s.r + 1; R <= range5.e.r; ++R) {
+      const cellA = `A${R + 1}`;
+      const cellB = `B${R + 1}`;
+      const cellC = `C${R + 1}`;
+      if (ws5[cellA]) ws5[cellA].s = dataStyle;
+      if (ws5[cellB]) ws5[cellB].s = dataStyle;
+      if (ws5[cellC]) ws5[cellC].s = dataStyle;
+    }
+
+    XLSXStyle.utils.book_append_sheet(wb, ws5, "👤 Por Usuário");
   }
 
   // === ABA 6: FABRICANTES ===
@@ -230,12 +384,26 @@ function toXLSXBlob(rows: InventoryRow[]): Blob {
     .sort((a, b) => b.QUANTIDADE - a.QUANTIDADE);
 
   if (fabricanteData.length > 0) {
-    const ws6 = XLSX.utils.json_to_sheet(fabricanteData);
-    ws6["!cols"] = [{ wch: 20 }, { wch: 12 }];
-    XLSX.utils.book_append_sheet(wb, ws6, "Fabricantes");
+    const ws6 = XLSXStyle.utils.json_to_sheet(fabricanteData);
+    ws6["!cols"] = [{ wch: 22 }, { wch: 15 }];
+
+    // Estilizar cabeçalho
+    if (ws6["A1"]) ws6["A1"].s = headerStyle;
+    if (ws6["B1"]) ws6["B1"].s = headerStyle;
+
+    // Estilizar dados
+    const range6 = XLSXStyle.utils.decode_range(ws6["!ref"] || "A1");
+    for (let R = range6.s.r + 1; R <= range6.e.r; ++R) {
+      const cellA = `A${R + 1}`;
+      const cellB = `B${R + 1}`;
+      if (ws6[cellA]) ws6[cellA].s = dataStyle;
+      if (ws6[cellB]) ws6[cellB].s = dataStyle;
+    }
+
+    XLSXStyle.utils.book_append_sheet(wb, ws6, "🏭 Fabricantes");
   }
 
-  const wbout = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+  const wbout = XLSXStyle.write(wb, { type: "array", bookType: "xlsx" });
   return new Blob([wbout], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
