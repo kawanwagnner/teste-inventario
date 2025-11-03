@@ -24,7 +24,6 @@ export type InventoryRow = {
   equip: string;
   local: string;
   fabricante: string;
-  modelo: string;
   usuario: string;
   createdAt: number; // epoch ms
 };
@@ -64,7 +63,6 @@ function toCSV(rows: InventoryRow[]): string {
     "EQUIP",
     "LOCAL",
     "FABRICANTE",
-    "MODELO",
     "USUARIO",
     "CRIADO_EM",
   ];
@@ -74,7 +72,6 @@ function toCSV(rows: InventoryRow[]): string {
       r.equip,
       r.local,
       r.fabricante,
-      r.modelo,
       r.usuario,
       new Date(r.createdAt).toISOString(),
     ]
@@ -133,7 +130,6 @@ function toXLSXBlob(rows: InventoryRow[]): Blob {
     PATRIMÔNIO: r.patrimonio || "-",
     LOCAL: r.local || "-",
     FABRICANTE: r.fabricante || "-",
-    MODELO: r.modelo || "-",
     USUÁRIO: r.usuario || "-",
     "CRIADO EM": new Date(r.createdAt).toLocaleString("pt-BR"),
   }));
@@ -146,13 +142,12 @@ function toXLSXBlob(rows: InventoryRow[]): Blob {
     { wch: 15 }, // PATRIMÔNIO
     { wch: 20 }, // LOCAL
     { wch: 15 }, // FABRICANTE
-    { wch: 25 }, // MODELO
     { wch: 20 }, // USUÁRIO
     { wch: 22 }, // CRIADO EM
   ];
 
   // Aplicar estilo ao cabeçalho (linha 1)
-  const headerCells = ["A1", "B1", "C1", "D1", "E1", "F1", "G1"];
+  const headerCells = ["A1", "B1", "C1", "D1", "E1", "F1"];
   headerCells.forEach((cell) => {
     if (ws1[cell]) {
       ws1[cell].s = headerStyle;
@@ -171,7 +166,7 @@ function toXLSXBlob(rows: InventoryRow[]): Blob {
   }
 
   // Adicionar filtro automático
-  ws1["!autofilter"] = { ref: `A1:G${rows.length + 1}` };
+  ws1["!autofilter"] = { ref: `A1:F${rows.length + 1}` };
 
   XLSXStyle.utils.book_append_sheet(wb, ws1, "📊 Inventário Completo");
 
@@ -418,7 +413,6 @@ export default function App() {
     equip: "",
     local: "",
     fabricante: "Dell",
-    modelo: "",
     usuario: "",
   });
   const [autofocus, setAutofocus] = useState(true);
@@ -476,7 +470,6 @@ export default function App() {
           label: "Fabricante",
           placeholder: "Ex: Dell, HP, Positivo",
         },
-        { key: "modelo", label: "Modelo", placeholder: "Ex: Inspiron 15 3520" },
         { key: "usuario", label: "Usuário", placeholder: "Ex: Maria Silva" },
       ] as const,
     []
@@ -505,7 +498,6 @@ export default function App() {
         equip: "",
         local: "",
         fabricante: "Dell",
-        modelo: "",
         usuario: "",
       });
       setStep(0);
@@ -533,7 +525,6 @@ export default function App() {
       equip: "",
       local: "",
       fabricante: "Dell",
-      modelo: "",
       usuario: "",
     });
     setStep(0);
@@ -643,7 +634,6 @@ export default function App() {
             item.patrimonio || item.PATRIMONIO || item["PATRIMÔNIO"] || "",
           local: item.local || item.LOCAL || "",
           fabricante: item.fabricante || item.FABRICANTE || "",
-          modelo: item.modelo || item.MODELO || "",
           usuario: item.usuario || item.USUARIO || item["USUÁRIO"] || "",
           createdAt: item.createdAt || Date.now(),
         }));
@@ -682,7 +672,6 @@ export default function App() {
           else if (h.includes("PATRIM")) colMap.patrimonio = idx;
           else if (h.includes("LOCAL")) colMap.local = idx;
           else if (h.includes("FABRIC")) colMap.fabricante = idx;
-          else if (h.includes("MODELO")) colMap.modelo = idx;
           else if (h.includes("USUARIO") || h.includes("USUÁRIO"))
             colMap.usuario = idx;
         });
@@ -715,7 +704,6 @@ export default function App() {
               patrimonio: values[colMap.patrimonio] || "",
               local: values[colMap.local] || "",
               fabricante: values[colMap.fabricante] || "",
-              modelo: values[colMap.modelo] || "",
               usuario: values[colMap.usuario] || "",
               createdAt: Date.now(),
             });
@@ -947,9 +935,6 @@ export default function App() {
                         FABRICANTE
                       </th>
                       <th className="px-3 py-2 text-left text-xs font-semibold text-neutral-600 whitespace-nowrap">
-                        MODELO
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-semibold text-neutral-600 whitespace-nowrap">
                         USUÁRIO
                       </th>
                       <th className="px-3 py-2 text-left text-xs font-semibold text-neutral-600 whitespace-nowrap">
@@ -981,9 +966,6 @@ export default function App() {
                           </td>
                           <td className="px-3 py-2 text-sm whitespace-nowrap">
                             {r.fabricante || "-"}
-                          </td>
-                          <td className="px-3 py-2 text-sm whitespace-nowrap">
-                            {r.modelo || "-"}
                           </td>
                           <td className="px-3 py-2 text-sm whitespace-nowrap">
                             {r.usuario || "-"}
