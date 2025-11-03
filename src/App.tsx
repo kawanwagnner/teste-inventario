@@ -488,6 +488,12 @@ export default function App() {
     setCurrent(next);
     const isLast = step % fields.length === fields.length - 1;
     if (isLast) {
+      // Validar campos obrigatórios
+      if (!next.equip || !next.patrimonio || !next.usuario) {
+        toast.error("Equipamento, Patrimônio e Usuário são obrigatórios!");
+        return;
+      }
+
       const row: InventoryRow = {
         ...next,
         createdAt: Date.now(),
@@ -513,8 +519,11 @@ export default function App() {
   }
 
   function handleQuickAdd() {
-    const allEmpty = Object.values(current).every((v) => !v);
-    if (allEmpty) return toast.error("Preencha pelo menos um campo");
+    // Validar campos obrigatórios
+    if (!current.equip || !current.patrimonio || !current.usuario) {
+      return toast.error("Equipamento, Patrimônio e Usuário são obrigatórios!");
+    }
+
     const row: InventoryRow = {
       ...current,
       createdAt: Date.now(),
