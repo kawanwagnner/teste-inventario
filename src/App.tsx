@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select } from "@/components/ui/select";
 import { Toaster } from "@/components/ui/sonner";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import * as XLSX from "xlsx";
@@ -255,6 +256,19 @@ export default function App() {
   const [autofocus, setAutofocus] = useState(true);
   const [compact, setCompact] = useState(true);
 
+  // Modal states
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    title: string;
+    description: string;
+    onConfirm: () => void;
+  }>({
+    open: false,
+    title: "",
+    description: "",
+    onConfirm: () => {},
+  });
+
   // Opções de equipamentos pré-definidas
   const equipmentOptions = ["Notebook", "Mouse", "Teclado", "Fone", "Monitor"];
 
@@ -381,10 +395,16 @@ export default function App() {
   }
 
   function clearAll() {
-    if (!confirm("Tem certeza que deseja apagar TODOS os registros locais?"))
-      return;
-    setRows([]);
-    toast.success("Registros apagados do dispositivo");
+    setConfirmDialog({
+      open: true,
+      title: "Limpar todos os registros?",
+      description:
+        "Esta ação não pode ser desfeita. Todos os registros serão permanentemente removidos do dispositivo.",
+      onConfirm: () => {
+        setRows([]);
+        toast.success("Registros apagados do dispositivo");
+      },
+    });
   }
 
   // Backup / Restore JSON
@@ -411,6 +431,84 @@ export default function App() {
       }
     };
     reader.readAsText(file);
+  }
+
+  function importCSV(file: File) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const text = String(reader.result || "");
+        const lines = text.split("\n").filter((line) => line.trim());
+
+        if (lines.length < 2) {
+          toast.error("CSV vazio ou inválido");
+          return;
+        }
+
+        // Processar header
+        const header = lines[0]
+          .split(",")
+          .map((h) => h.trim().replace(/^"|"$/g, "").toUpperCase());
+
+        // Mapear colunas
+        const colMap: Record<string, number> = {};
+        header.forEach((h, idx) => {
+          if (h.includes("EQUIP")) colMap.equip = idx;
+          else if (h.includes("PATRIM")) colMap.patrimonio = idx;
+          else if (h.includes("LOCAL")) colMap.local = idx;
+          else if (h.includes("FABRIC")) colMap.fabricante = idx;
+          else if (h.includes("MODELO")) colMap.modelo = idx;
+          else if (h.includes("USUARIO") || h.includes("USUÁRIO"))
+            colMap.usuario = idx;
+        });
+
+        // Processar linhas
+        const imported: InventoryRow[] = [];
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i];
+          // Parse CSV respeitando aspas
+          const values: string[] = [];
+          let current = "";
+          let inQuotes = false;
+
+          for (let j = 0; j < line.length; j++) {
+            const char = line[j];
+            if (char === '"') {
+              inQuotes = !inQuotes;
+            } else if (char === "," && !inQuotes) {
+              values.push(current.trim().replace(/^"|"$/g, ""));
+              current = "";
+            } else {
+              current += char;
+            }
+          }
+          values.push(current.trim().replace(/^"|"$/g, ""));
+
+          if (values.length > 0) {
+            imported.push({
+              equip: values[colMap.equip] || "",
+              patrimonio: values[colMap.patrimonio] || "",
+              local: values[colMap.local] || "",
+              fabricante: values[colMap.fabricante] || "",
+              modelo: values[colMap.modelo] || "",
+              usuario: values[colMap.usuario] || "",
+              createdAt: Date.now(),
+            });
+          }
+        }
+
+        if (imported.length > 0) {
+          setRows((prev) => [...imported, ...prev]);
+          toast.success(`${imported.length} itens importados do CSV`);
+        } else {
+          toast.error("Nenhum dado válido encontrado no CSV");
+        }
+      } catch (e) {
+        console.error(e);
+        toast.error("Erro ao processar CSV");
+      }
+    };
+    reader.readAsText(file, "utf-8");
   }
 
   // UI sizes
@@ -541,16 +639,29 @@ export default function App() {
           </CardContent>
           <CardFooter className={`flex flex-wrap gap-2 ${pad}`}>
             <Button onClick={exportCSV} className="gap-2">
-              <Download className="w-4 h-4" /> CSV
+              <Download className="w-4 h-4" /> Exportar CSV
             </Button>
             <Button onClick={exportXLSX} className="gap-2" variant="outline">
-              <Download className="w-4 h-4" /> Excel
+              <Download className="w-4 h-4" /> Exportar Excel
             </Button>
+            <label className="inline-flex items-center gap-2 cursor-pointer text-sm px-3 py-2 border rounded-lg hover:bg-neutral-50">
+              <Upload className="w-4 h-4" /> Importar CSV
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.currentTarget.files?.[0];
+                  if (f) importCSV(f);
+                  e.currentTarget.value = "";
+                }}
+              />
+            </label>
             <Button onClick={backupJSON} className="gap-2" variant="outline">
               <Database className="w-4 h-4" /> Backup JSON
             </Button>
             <label className="inline-flex items-center gap-2 cursor-pointer text-sm px-3 py-2 border rounded-lg hover:bg-neutral-50">
-              <Upload className="w-4 h-4" /> Restaurar
+              <Upload className="w-4 h-4" /> Restaurar JSON
               <input
                 type="file"
                 accept="application/json"
@@ -647,10 +758,23 @@ export default function App() {
                               size="sm"
                               variant="ghost"
                               onClick={() => {
-                                setRows((prev) =>
-                                  prev.filter((_, idx) => idx !== i)
-                                );
-                                toast.success("Item removido");
+                                setConfirmDialog({
+                                  open: true,
+                                  title: "Remover este item?",
+                                  description: `Tem certeza que deseja remover ${
+                                    r.equip || "este item"
+                                  }${
+                                    r.patrimonio
+                                      ? ` (Patrimônio: ${r.patrimonio})`
+                                      : ""
+                                  }?`,
+                                  onConfirm: () => {
+                                    setRows((prev) =>
+                                      prev.filter((_, idx) => idx !== i)
+                                    );
+                                    toast.success("Item removido");
+                                  },
+                                });
                               }}
                               className="h-7 w-7 p-0 hover:bg-red-50 hover:text-red-600"
                               title="Remover item"
@@ -674,6 +798,17 @@ export default function App() {
           tela cheia. Dados ficam no seu dispositivo (localStorage).
         </div>
       </main>
+
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        open={confirmDialog.open}
+        onOpenChange={(open) => setConfirmDialog((prev) => ({ ...prev, open }))}
+        onConfirm={confirmDialog.onConfirm}
+        title={confirmDialog.title}
+        description={confirmDialog.description}
+        confirmText="Confirmar"
+        cancelText="Cancelar"
+      />
     </div>
   );
 }
