@@ -601,6 +601,63 @@ export default function App() {
     reader.readAsText(file);
   }
 
+  function importJSON(file: File) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(String(reader.result || "[]"));
+
+        // Suporta diferentes formatos de JSON
+        let jsonData: any[] = [];
+
+        // Formato array direto
+        if (Array.isArray(data)) {
+          jsonData = data;
+        }
+        // Formato com propriedade "rows" (backup)
+        else if (data.rows && Array.isArray(data.rows)) {
+          jsonData = data.rows;
+        }
+        // Formato com propriedade "data"
+        else if (data.data && Array.isArray(data.data)) {
+          jsonData = data.data;
+        } else {
+          toast.error("Formato de JSON não reconhecido");
+          return;
+        }
+
+        if (jsonData.length === 0) {
+          toast.error("JSON vazio");
+          return;
+        }
+
+        // Mapear dados para o formato correto
+        const imported: InventoryRow[] = jsonData.map((item: any) => ({
+          equip:
+            item.equip ||
+            item.equipamento ||
+            item.EQUIP ||
+            item.EQUIPAMENTO ||
+            "",
+          patrimonio:
+            item.patrimonio || item.PATRIMONIO || item["PATRIMÔNIO"] || "",
+          local: item.local || item.LOCAL || "",
+          fabricante: item.fabricante || item.FABRICANTE || "",
+          modelo: item.modelo || item.MODELO || "",
+          usuario: item.usuario || item.USUARIO || item["USUÁRIO"] || "",
+          createdAt: item.createdAt || Date.now(),
+        }));
+
+        setRows((prev) => [...imported, ...prev]);
+        toast.success(`${imported.length} itens importados do JSON`);
+      } catch (e) {
+        console.error(e);
+        toast.error("Erro ao processar JSON");
+      }
+    };
+    reader.readAsText(file, "utf-8");
+  }
+
   function importCSV(file: File) {
     const reader = new FileReader();
     reader.onload = () => {
@@ -825,11 +882,24 @@ export default function App() {
                 }}
               />
             </label>
+            <label className="inline-flex items-center gap-2 cursor-pointer text-sm px-3 py-2 border rounded-lg hover:bg-neutral-50">
+              <Upload className="w-4 h-4" /> Importar JSON
+              <input
+                type="file"
+                accept=".json,application/json"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.currentTarget.files?.[0];
+                  if (f) importJSON(f);
+                  e.currentTarget.value = "";
+                }}
+              />
+            </label>
             <Button onClick={backupJSON} className="gap-2" variant="outline">
               <Database className="w-4 h-4" /> Backup JSON
             </Button>
             <label className="inline-flex items-center gap-2 cursor-pointer text-sm px-3 py-2 border rounded-lg hover:bg-neutral-50">
-              <Upload className="w-4 h-4" /> Restaurar JSON
+              <Upload className="w-4 h-4" /> Restaurar Backup
               <input
                 type="file"
                 accept="application/json"
