@@ -456,6 +456,15 @@ export default function App() {
     return locations.slice(0, 10); // últimos 10
   }, [rows]);
 
+  // Obter usuários únicos dos últimos registros
+  const recentUsers = useMemo(() => {
+    const users = rows
+      .map((r) => r.usuario)
+      .filter(Boolean)
+      .filter((value, index, self) => self.indexOf(value) === index); // únicos
+    return users.slice(0, 10); // últimos 10
+  }, [rows]);
+
   // Autosave
   useEffect(() => {
     saveRows(rows);
@@ -888,7 +897,11 @@ export default function App() {
                     }}
                     className="text-base h-12"
                     list={
-                      activeField.key === "local" ? "local-options" : undefined
+                      activeField.key === "local"
+                        ? "local-options"
+                        : activeField.key === "usuario"
+                        ? "usuario-options"
+                        : undefined
                     }
                   />
                   {activeField.key === "local" &&
@@ -899,6 +912,13 @@ export default function App() {
                         ))}
                       </datalist>
                     )}
+                  {activeField.key === "usuario" && recentUsers.length > 0 && (
+                    <datalist id="usuario-options">
+                      {recentUsers.map((user, idx) => (
+                        <option key={idx} value={user} />
+                      ))}
+                    </datalist>
+                  )}
                 </>
               )}
               <div className="flex items-center justify-between text-xs text-neutral-500">
@@ -1119,6 +1139,7 @@ export default function App() {
                                   }
                                   className="text-sm h-8 min-w-[120px]"
                                   placeholder="Usuário"
+                                  list="usuario-edit-options"
                                 />
                               ) : (
                                 r.usuario || "-"
@@ -1201,6 +1222,14 @@ export default function App() {
                   <datalist id="local-edit-options">
                     {recentLocations.map((loc, idx) => (
                       <option key={idx} value={loc} />
+                    ))}
+                  </datalist>
+                )}
+                {/* Datalist para edição de Usuário */}
+                {recentUsers.length > 0 && (
+                  <datalist id="usuario-edit-options">
+                    {recentUsers.map((user, idx) => (
+                      <option key={idx} value={user} />
                     ))}
                   </datalist>
                 )}
