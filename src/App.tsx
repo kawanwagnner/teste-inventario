@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Download, Upload, Trash2, Database, Smartphone } from "lucide-react";
+import {
+  Download,
+  Upload,
+  Trash2,
+  Database,
+  Smartphone,
+  Pencil,
+  Check,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -431,8 +440,21 @@ export default function App() {
     onConfirm: () => {},
   });
 
+  // Edit mode
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editingRow, setEditingRow] = useState<InventoryRow | null>(null);
+
   // Opções de equipamentos pré-definidas
   const equipmentOptions = ["Notebook", "Mouse", "Teclado", "Fone", "Monitor"];
+
+  // Obter locais únicos dos últimos registros
+  const recentLocations = useMemo(() => {
+    const locations = rows
+      .map((r) => r.local)
+      .filter(Boolean)
+      .filter((value, index, self) => self.indexOf(value) === index); // únicos
+    return locations.slice(0, 10); // últimos 10
+  }, [rows]);
 
   // Autosave
   useEffect(() => {
@@ -573,6 +595,39 @@ export default function App() {
         toast.success("Registros apagados do dispositivo");
       },
     });
+  }
+
+  // Edit functions
+  function startEdit(index: number) {
+    setEditingIndex(index);
+    setEditingRow({ ...rows[index] });
+  }
+
+  function cancelEdit() {
+    setEditingIndex(null);
+    setEditingRow(null);
+  }
+
+  function saveEdit() {
+    if (editingIndex === null || !editingRow) return;
+
+    // Validar campos obrigatórios
+    if (!editingRow.equip || !editingRow.patrimonio || !editingRow.usuario) {
+      toast.error("Equipamento, Patrimônio e Usuário são obrigatórios!");
+      return;
+    }
+
+    const newRows = [...rows];
+    newRows[editingIndex] = editingRow;
+    setRows(newRows);
+    setEditingIndex(null);
+    setEditingRow(null);
+    toast.success("Item atualizado!");
+  }
+
+  function updateEditField(field: keyof InventoryRow, value: string) {
+    if (!editingRow) return;
+    setEditingRow({ ...editingRow, [field]: value });
   }
 
   // Backup / Restore JSON
@@ -811,25 +866,40 @@ export default function App() {
                   ))}
                 </Select>
               ) : (
-                <Input
-                  id="active"
-                  ref={inputRef}
-                  inputMode="text"
-                  placeholder={activeField.placeholder}
-                  value={(current as any)[activeField.key]}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                    setCurrent((c) => ({
-                      ...c,
-                      [activeField.key]: e.target.value,
-                    }))
-                  }
-                  onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
-                    if (e.key === "Enter")
-                      submitField((e.target as HTMLInputElement).value);
-                    if (e.key === "Escape") backStep();
-                  }}
-                  className="text-base h-12"
-                />
+                <>
+                  <Input
+                    id="active"
+                    ref={inputRef}
+                    inputMode={
+                      activeField.key === "patrimonio" ? "numeric" : "text"
+                    }
+                    placeholder={activeField.placeholder}
+                    value={(current as any)[activeField.key]}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                      setCurrent((c) => ({
+                        ...c,
+                        [activeField.key]: e.target.value,
+                      }))
+                    }
+                    onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
+                      if (e.key === "Enter")
+                        submitField((e.target as HTMLInputElement).value);
+                      if (e.key === "Escape") backStep();
+                    }}
+                    className="text-base h-12"
+                    list={
+                      activeField.key === "local" ? "local-options" : undefined
+                    }
+                  />
+                  {activeField.key === "local" &&
+                    recentLocations.length > 0 && (
+                      <datalist id="local-options">
+                        {recentLocations.map((loc, idx) => (
+                          <option key={idx} value={loc} />
+                        ))}
+                      </datalist>
+                    )}
+                </>
               )}
               <div className="flex items-center justify-between text-xs text-neutral-500">
                 <span>Dica: Enter para avançar • Esc para voltar</span>
@@ -956,66 +1026,184 @@ export default function App() {
                   </thead>
                   <tbody className="divide-y bg-white">
                     <AnimatePresence initial={false}>
-                      {rows.map((r, i) => (
-                        <motion.tr
-                          key={r.createdAt + "_" + i}
-                          initial={{ opacity: 0, y: 6 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -6 }}
-                          className="hover:bg-neutral-50 transition-colors"
-                        >
-                          <td className="px-3 py-2 text-sm whitespace-nowrap">
-                            {r.equip || "-"}
-                          </td>
-                          <td className="px-3 py-2 text-sm whitespace-nowrap">
-                            {r.patrimonio || "-"}
-                          </td>
-                          <td className="px-3 py-2 text-sm whitespace-nowrap">
-                            {r.local || "-"}
-                          </td>
-                          <td className="px-3 py-2 text-sm whitespace-nowrap">
-                            {r.fabricante || "-"}
-                          </td>
-                          <td className="px-3 py-2 text-sm whitespace-nowrap">
-                            {r.usuario || "-"}
-                          </td>
-                          <td className="px-3 py-2 text-sm whitespace-nowrap">
-                            {new Date(r.createdAt).toLocaleString("pt-BR")}
-                          </td>
-                          <td className="px-3 py-2 text-sm whitespace-nowrap text-center">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                setConfirmDialog({
-                                  open: true,
-                                  title: "Remover este item?",
-                                  description: `Tem certeza que deseja remover ${
-                                    r.equip || "este item"
-                                  }${
-                                    r.patrimonio
-                                      ? ` (Patrimônio: ${r.patrimonio})`
-                                      : ""
-                                  }?`,
-                                  onConfirm: () => {
-                                    setRows((prev) =>
-                                      prev.filter((_, idx) => idx !== i)
-                                    );
-                                    toast.success("Item removido");
-                                  },
-                                });
-                              }}
-                              className="h-7 w-7 p-0 hover:bg-red-50 hover:text-red-600"
-                              title="Remover item"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
-                          </td>
-                        </motion.tr>
-                      ))}
+                      {rows.map((r, i) => {
+                        const isEditing = editingIndex === i;
+                        return (
+                          <motion.tr
+                            key={r.createdAt + "_" + i}
+                            initial={{ opacity: 0, y: 6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -6 }}
+                            className={
+                              isEditing
+                                ? "bg-blue-50"
+                                : "hover:bg-neutral-50 transition-colors"
+                            }
+                          >
+                            <td className="px-3 py-2 text-sm whitespace-nowrap">
+                              {isEditing && editingRow ? (
+                                <Select
+                                  value={editingRow.equip}
+                                  onChange={(e) =>
+                                    updateEditField("equip", e.target.value)
+                                  }
+                                  className="text-sm min-w-[120px]"
+                                >
+                                  <option value="">Selecione...</option>
+                                  {equipmentOptions.map((opt) => (
+                                    <option key={opt} value={opt}>
+                                      {opt}
+                                    </option>
+                                  ))}
+                                </Select>
+                              ) : (
+                                r.equip || "-"
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-sm whitespace-nowrap">
+                              {isEditing && editingRow ? (
+                                <Input
+                                  value={editingRow.patrimonio}
+                                  onChange={(e) =>
+                                    updateEditField(
+                                      "patrimonio",
+                                      e.target.value
+                                    )
+                                  }
+                                  inputMode="numeric"
+                                  className="text-sm h-8 min-w-[100px]"
+                                  placeholder="Patrimônio"
+                                />
+                              ) : (
+                                r.patrimonio || "-"
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-sm whitespace-nowrap">
+                              {isEditing && editingRow ? (
+                                <Input
+                                  value={editingRow.local}
+                                  onChange={(e) =>
+                                    updateEditField("local", e.target.value)
+                                  }
+                                  className="text-sm h-8 min-w-[120px]"
+                                  placeholder="Local"
+                                  list="local-edit-options"
+                                />
+                              ) : (
+                                r.local || "-"
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-sm whitespace-nowrap">
+                              {isEditing && editingRow ? (
+                                <Input
+                                  value={editingRow.fabricante}
+                                  onChange={(e) =>
+                                    updateEditField(
+                                      "fabricante",
+                                      e.target.value
+                                    )
+                                  }
+                                  className="text-sm h-8 min-w-[100px]"
+                                  placeholder="Fabricante"
+                                />
+                              ) : (
+                                r.fabricante || "-"
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-sm whitespace-nowrap">
+                              {isEditing && editingRow ? (
+                                <Input
+                                  value={editingRow.usuario}
+                                  onChange={(e) =>
+                                    updateEditField("usuario", e.target.value)
+                                  }
+                                  className="text-sm h-8 min-w-[120px]"
+                                  placeholder="Usuário"
+                                />
+                              ) : (
+                                r.usuario || "-"
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-sm whitespace-nowrap">
+                              {new Date(r.createdAt).toLocaleString("pt-BR")}
+                            </td>
+                            <td className="px-3 py-2 text-sm whitespace-nowrap text-center">
+                              {isEditing ? (
+                                <div className="flex gap-1 justify-center">
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={saveEdit}
+                                    className="h-7 w-7 p-0 hover:bg-green-50 hover:text-green-600"
+                                    title="Salvar"
+                                  >
+                                    <Check className="w-3.5 h-3.5" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={cancelEdit}
+                                    className="h-7 w-7 p-0 hover:bg-neutral-100"
+                                    title="Cancelar"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </Button>
+                                </div>
+                              ) : (
+                                <div className="flex gap-1 justify-center">
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => startEdit(i)}
+                                    className="h-7 w-7 p-0 hover:bg-blue-50 hover:text-blue-600"
+                                    title="Editar item"
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => {
+                                      setConfirmDialog({
+                                        open: true,
+                                        title: "Remover este item?",
+                                        description: `Tem certeza que deseja remover ${
+                                          r.equip || "este item"
+                                        }${
+                                          r.patrimonio
+                                            ? ` (Patrimônio: ${r.patrimonio})`
+                                            : ""
+                                        }?`,
+                                        onConfirm: () => {
+                                          setRows((prev) =>
+                                            prev.filter((_, idx) => idx !== i)
+                                          );
+                                          toast.success("Item removido");
+                                        },
+                                      });
+                                    }}
+                                    className="h-7 w-7 p-0 hover:bg-red-50 hover:text-red-600"
+                                    title="Remover item"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </Button>
+                                </div>
+                              )}
+                            </td>
+                          </motion.tr>
+                        );
+                      })}
                     </AnimatePresence>
                   </tbody>
                 </table>
+                {/* Datalist para edição de Local */}
+                {recentLocations.length > 0 && (
+                  <datalist id="local-edit-options">
+                    {recentLocations.map((loc, idx) => (
+                      <option key={idx} value={loc} />
+                    ))}
+                  </datalist>
+                )}
               </div>
             )}
           </CardContent>
