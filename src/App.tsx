@@ -8,6 +8,7 @@ import {
   Pencil,
   Check,
   X,
+  Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -444,6 +445,17 @@ export default function App() {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingRow, setEditingRow] = useState<InventoryRow | null>(null);
 
+  // Search/Filter
+  const [searchTerm, setSearchTerm] = useState("");
+  const [searchHistory, setSearchHistory] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem("search_history");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
   // Opções de equipamentos pré-definidas
   const equipmentOptions = ["Notebook", "Mouse", "Teclado", "Fone", "Monitor"];
 
@@ -464,6 +476,37 @@ export default function App() {
       .filter((value, index, self) => self.indexOf(value) === index); // únicos
     return users.slice(0, 10); // últimos 10
   }, [rows]);
+
+  // Filtrar registros baseado na pesquisa
+  const filteredRows = useMemo(() => {
+    if (!searchTerm.trim()) return rows;
+    const term = searchTerm.toLowerCase();
+    return rows.filter(
+      (r) =>
+        r.usuario?.toLowerCase().includes(term) ||
+        r.patrimonio?.toLowerCase().includes(term) ||
+        r.local?.toLowerCase().includes(term) ||
+        r.equip?.toLowerCase().includes(term) ||
+        r.fabricante?.toLowerCase().includes(term)
+    );
+  }, [rows, searchTerm]);
+
+  // Salvar histórico de pesquisa
+  useEffect(() => {
+    if (searchHistory.length > 0) {
+      localStorage.setItem("search_history", JSON.stringify(searchHistory));
+    }
+  }, [searchHistory]);
+
+  // Função para adicionar ao histórico
+  function addToSearchHistory(term: string) {
+    if (!term.trim()) return;
+    setSearchHistory((prev) => {
+      const filtered = prev.filter((t) => t !== term);
+      const newHistory = [term, ...filtered].slice(0, 5); // máximo 5
+      return newHistory;
+    });
+  }
 
   // Autosave
   useEffect(() => {
@@ -1007,14 +1050,57 @@ export default function App() {
         {/* Preview List */}
         <Card className="border-neutral-200">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">
-              Registros ({rows.length})
-            </CardTitle>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <CardTitle className="text-base">
+                Registros ({rows.length})
+                {searchTerm && (
+                  <span className="text-sm font-normal text-neutral-500 ml-2">
+                    ({filteredRows.length}{" "}
+                    {filteredRows.length === 1 ? "resultado" : "resultados"})
+                  </span>
+                )}
+              </CardTitle>
+              <div className="relative flex-1 max-w-md">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+                <Input
+                  type="text"
+                  placeholder="Buscar por usuário, patrimônio, local..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && searchTerm.trim()) {
+                      addToSearchHistory(searchTerm.trim());
+                    }
+                  }}
+                  className="pl-9 pr-3 h-9 text-sm"
+                  list="search-history"
+                />
+                {searchHistory.length > 0 && (
+                  <datalist id="search-history">
+                    {searchHistory.map((term, idx) => (
+                      <option key={idx} value={term} />
+                    ))}
+                  </datalist>
+                )}
+                {searchTerm && (
+                  <button
+                    onClick={() => setSearchTerm("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            </div>
           </CardHeader>
           <CardContent className={pad}>
             {rows.length === 0 ? (
               <p className="text-sm text-neutral-500">
                 Nenhum item ainda. Comece pelo formulário acima.
+              </p>
+            ) : filteredRows.length === 0 ? (
+              <p className="text-sm text-neutral-500">
+                Nenhum resultado encontrado para "{searchTerm}".
               </p>
             ) : (
               <div className="w-full overflow-x-auto overflow-y-auto max-h-[500px] border rounded-lg">
@@ -1046,7 +1132,12 @@ export default function App() {
                   </thead>
                   <tbody className="divide-y bg-white">
                     <AnimatePresence initial={false}>
-                      {rows.map((r, i) => {
+                      {filteredRows.map((r) => {
+                        const i = rows.findIndex(
+                          (row) =>
+                            row.createdAt === r.createdAt &&
+                            row.patrimonio === r.patrimonio
+                        );
                         const isEditing = editingIndex === i;
                         return (
                           <motion.tr
