@@ -201,10 +201,28 @@ function toXLSXBlob(rows: InventoryRow[]): Blob {
     }
   });
 
+  // Detectar conflitos de patrimônio
+  const patrimonioMap: Record<string, InventoryRow[]> = {};
+  rows.forEach((r) => {
+    if (r.patrimonio && r.patrimonio.trim()) {
+      if (!patrimonioMap[r.patrimonio]) {
+        patrimonioMap[r.patrimonio] = [];
+      }
+      patrimonioMap[r.patrimonio].push(r);
+    }
+  });
+
+  const conflicts = Object.entries(patrimonioMap)
+    .filter(([, items]) => items.length > 1)
+    .map(([patrimonio, items]) => ({ patrimonio, items }));
+
+  const totalConflicts = conflicts.length;
+
   const metricsData = [
     { MÉTRICA: "Total de Registros", VALOR: totalItems },
     { MÉTRICA: "Total de Equipamentos", VALOR: totalEquipments },
     { MÉTRICA: "Pessoas com Equipamentos", VALOR: uniqueUsers },
+    { MÉTRICA: "Conflitos de Patrimônio", VALOR: totalConflicts },
     { MÉTRICA: "", VALOR: "" },
     { MÉTRICA: "EQUIPAMENTOS POR TIPO", VALOR: "" },
     ...Object.entries(equipCount).map(([equip, count]) => ({
@@ -217,10 +235,66 @@ function toXLSXBlob(rows: InventoryRow[]): Blob {
       MÉTRICA: `  ${local}`,
       VALOR: count,
     })),
+    { MÉTRICA: "", VALOR: "" },
+    { MÉTRICA: "", VALOR: "" },
+    { MÉTRICA: "⚠️ CONFLITOS DE PATRIMÔNIO", VALOR: "" },
+    { MÉTRICA: "", VALOR: "" },
+    ...(totalConflicts > 0
+      ? conflicts.flatMap(({ patrimonio, items }) => [
+          {
+            MÉTRICA: `Patrimônio: ${patrimonio}`,
+            VALOR: `${items.length} registros`,
+          },
+          ...items.map((item, idx) => ({
+            MÉTRICA: `  ${idx + 1}. ${item.usuario || "Sem usuário"} - ${
+              item.local || "Sem local"
+            } (${item.equip || "Sem equip"})`,
+            VALOR: "",
+          })),
+          { MÉTRICA: "", VALOR: "" },
+        ])
+      : [{ MÉTRICA: "✅ Nenhum conflito encontrado", VALOR: "" }]),
   ];
 
   const ws2 = XLSXStyle.utils.json_to_sheet(metricsData);
-  ws2["!cols"] = [{ wch: 40 }, { wch: 18 }];
+  ws2["!cols"] = [{ wch: 60 }, { wch: 20 }];
+
+  // Estilos específicos para conflitos
+  const conflictTitleStyle = {
+    font: { bold: true, sz: 12, color: { rgb: "C00000" } },
+    fill: { fgColor: { rgb: "FFE699" } },
+    alignment: { horizontal: "left", vertical: "center" },
+    border: {
+      top: { style: "medium", color: { rgb: "C00000" } },
+      bottom: { style: "medium", color: { rgb: "C00000" } },
+      left: { style: "medium", color: { rgb: "C00000" } },
+      right: { style: "medium", color: { rgb: "C00000" } },
+    },
+  };
+
+  const conflictHeaderStyle = {
+    font: { bold: true, sz: 10 },
+    fill: { fgColor: { rgb: "FFF2CC" } },
+    alignment: { horizontal: "left", vertical: "center" },
+    border: {
+      top: { style: "thin", color: { rgb: "F4B084" } },
+      bottom: { style: "thin", color: { rgb: "F4B084" } },
+      left: { style: "thin", color: { rgb: "F4B084" } },
+      right: { style: "thin", color: { rgb: "F4B084" } },
+    },
+  };
+
+  const conflictDataStyle = {
+    font: { sz: 10 },
+    alignment: { horizontal: "left", vertical: "center" },
+    fill: { fgColor: { rgb: "FFF9E6" } },
+    border: {
+      top: { style: "thin", color: { rgb: "E0E0E0" } },
+      bottom: { style: "thin", color: { rgb: "E0E0E0" } },
+      left: { style: "thin", color: { rgb: "E0E0E0" } },
+      right: { style: "thin", color: { rgb: "E0E0E0" } },
+    },
+  };
 
   // Estilizar cabeçalho
   if (ws2["A1"]) ws2["A1"].s = headerStyle;
@@ -234,15 +308,41 @@ function toXLSXBlob(rows: InventoryRow[]): Blob {
 
     if (ws2[cellA]) {
       const value = ws2[cellA].v;
-      // Títulos de seção
-      if (
+
+      // Título de conflitos
+      if (typeof value === "string" && value.includes("⚠️ CONFLITOS")) {
+        ws2[cellA].s = conflictTitleStyle;
+        if (ws2[cellB]) ws2[cellB].s = conflictTitleStyle;
+      }
+      // Patrimônio em conflito
+      else if (typeof value === "string" && value.startsWith("Patrimônio:")) {
+        ws2[cellA].s = conflictHeaderStyle;
+        if (ws2[cellB]) ws2[cellB].s = conflictHeaderStyle;
+      }
+      // Detalhes do conflito (linhas com números)
+      else if (typeof value === "string" && /^\s+\d+\./.test(value)) {
+        ws2[cellA].s = conflictDataStyle;
+        if (ws2[cellB]) ws2[cellB].s = conflictDataStyle;
+      }
+      // Sem conflitos
+      else if (
+        typeof value === "string" &&
+        value.includes("✅ Nenhum conflito")
+      ) {
+        ws2[cellA].s = {
+          ...metricValueStyle,
+          font: { ...metricValueStyle.font, color: { rgb: "008000" } },
+        };
+      }
+      // Títulos de seção normais
+      else if (
         typeof value === "string" &&
         (value.includes("POR TIPO") || value.includes("POR LOCAL"))
       ) {
         ws2[cellA].s = titleStyle;
       }
-      // Primeiras 3 linhas (métricas principais)
-      else if (R >= 1 && R <= 3) {
+      // Primeiras 4 linhas (métricas principais + conflitos)
+      else if (R >= 1 && R <= 4) {
         ws2[cellA].s = metricHeaderStyle;
         if (ws2[cellB]) ws2[cellB].s = metricValueStyle;
       }
