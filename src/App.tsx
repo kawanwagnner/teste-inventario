@@ -9,6 +9,7 @@ import {
   Check,
   X,
   Search,
+  EyeOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,6 +25,13 @@ import { Switch } from "@/components/ui/switch";
 import { Select } from "@/components/ui/select";
 import { Toaster } from "@/components/ui/sonner";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import * as XLSXStyle from "xlsx-js-style";
@@ -541,6 +549,8 @@ export default function App() {
     onConfirm: () => {},
   });
 
+  const [exportFilterDialog, setExportFilterDialog] = useState(false);
+
   // Edit mode
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingRow, setEditingRow] = useState<InventoryRow | null>(null);
@@ -556,8 +566,26 @@ export default function App() {
     }
   });
 
+  // Items excluídos da exportação
+  const [excludeFromExport, setExcludeFromExport] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem("exclude_from_export");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
   // Opções de equipamentos pré-definidas
   const equipmentOptions = ["Notebook", "Mouse", "Teclado", "Fone", "Monitor"];
+
+  // Salvar lista de exclusão no localStorage
+  useEffect(() => {
+    localStorage.setItem(
+      "exclude_from_export",
+      JSON.stringify(excludeFromExport)
+    );
+  }, [excludeFromExport]);
 
   // Obter locais únicos dos últimos registros
   const recentLocations = useMemo(() => {
@@ -714,26 +742,49 @@ export default function App() {
     toast.success("Item salvo (adição rápida)");
   }
 
+  // Filtrar itens para exportação
+  function getExportableRows() {
+    return rows.filter((row) => !excludeFromExport.includes(row.equip));
+  }
+
   function exportCSV() {
     if (!rows.length) return toast.error("Nada para exportar");
-    const csv = toCSV(rows);
+    const exportRows = getExportableRows();
+    if (exportRows.length === 0) {
+      return toast.error("Todos os itens estão ocultos da exportação");
+    }
+    const csv = toCSV(exportRows);
     downloadBlob(
       `inventario_${new Date().toISOString().slice(0, 10)}.csv`,
       "text/csv;charset=utf-8;",
       csv
     );
-    toast.success("CSV gerado");
+    const excluded = rows.length - exportRows.length;
+    toast.success(
+      `CSV gerado (${exportRows.length} itens${
+        excluded > 0 ? `, ${excluded} ocultos` : ""
+      })`
+    );
   }
 
   function exportXLSX() {
     if (!rows.length) return toast.error("Nada para exportar");
-    const blob = toXLSXBlob(rows);
+    const exportRows = getExportableRows();
+    if (exportRows.length === 0) {
+      return toast.error("Todos os itens estão ocultos da exportação");
+    }
+    const blob = toXLSXBlob(exportRows);
     downloadBlob(
       `inventario_${new Date().toISOString().slice(0, 10)}.xlsx`,
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       blob
     );
-    toast.success("Excel gerado");
+    const excluded = rows.length - exportRows.length;
+    toast.success(
+      `Excel gerado (${exportRows.length} itens${
+        excluded > 0 ? `, ${excluded} ocultos` : ""
+      })`
+    );
   }
 
   function clearAll() {
@@ -793,19 +844,14 @@ export default function App() {
     toast.success("Backup baixado");
   }
 
-  function restoreJSON(file: File) {
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const data = JSON.parse(String(reader.result || "{}"));
-        if (!Array.isArray(data.rows)) throw new Error("arquivo inválido");
-        setRows((prev) => [...data.rows, ...prev]);
-        toast.success("Backup restaurado");
-      } catch (e) {
-        toast.error("Falha ao restaurar backup");
+  function toggleExcludeEquipment(equip: string) {
+    setExcludeFromExport((prev) => {
+      if (prev.includes(equip)) {
+        return prev.filter((e) => e !== equip);
+      } else {
+        return [...prev, equip];
       }
-    };
-    reader.readAsText(file);
+    });
   }
 
   function importJSON(file: File) {
@@ -1126,21 +1172,16 @@ export default function App() {
               />
             </label>
             <Button onClick={backupJSON} className="gap-2" variant="outline">
-              <Database className="w-4 h-4" /> Backup JSON
+              <Database className="w-4 h-4" /> Exportar JSON
             </Button>
-            <label className="inline-flex items-center gap-2 cursor-pointer text-sm px-3 py-2 border rounded-lg hover:bg-neutral-50">
-              <Upload className="w-4 h-4" /> Restaurar Backup
-              <input
-                type="file"
-                accept="application/json"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.currentTarget.files?.[0];
-                  if (f) restoreJSON(f);
-                  e.currentTarget.value = "";
-                }}
-              />
-            </label>
+            <Button
+              onClick={() => setExportFilterDialog(true)}
+              className="gap-2"
+              variant="outline"
+            >
+              <EyeOff className="w-4 h-4" /> Ocultar da Exportação (
+              {excludeFromExport.length})
+            </Button>
             <Button onClick={clearAll} className="gap-2" variant="destructive">
               <Trash2 className="w-4 h-4" /> Limpar tudo
             </Button>
@@ -1435,6 +1476,81 @@ export default function App() {
           tela cheia. Dados ficam no seu dispositivo (localStorage).
         </div>
       </main>
+
+      {/* Export Filter Dialog */}
+      <Dialog open={exportFilterDialog} onOpenChange={setExportFilterDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Configurar Exportação</DialogTitle>
+            <DialogDescription>
+              Selecione os tipos de equipamentos que NÃO devem aparecer nas
+              exportações Excel/CSV. Eles continuarão visíveis na lista.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-4">
+            {equipmentOptions.map((equip) => {
+              const count = rows.filter((r) => r.equip === equip).length;
+              const isExcluded = excludeFromExport.includes(equip);
+              return (
+                <div
+                  key={equip}
+                  className="flex items-center justify-between p-3 border rounded-lg hover:bg-neutral-50 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      id={`exclude-${equip}`}
+                      checked={isExcluded}
+                      onChange={() => toggleExcludeEquipment(equip)}
+                      className="w-4 h-4 cursor-pointer"
+                    />
+                    <label
+                      htmlFor={`exclude-${equip}`}
+                      className="cursor-pointer font-medium"
+                    >
+                      {equip}
+                    </label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-neutral-500">
+                      {count} {count === 1 ? "item" : "itens"}
+                    </span>
+                    {isExcluded && (
+                      <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">
+                        Oculto
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            {excludeFromExport.length > 0 && (
+              <div className="pt-2 border-t">
+                <p className="text-sm text-neutral-600">
+                  <strong>{excludeFromExport.length}</strong> tipo(s) oculto(s)
+                  da exportação
+                </p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setExcludeFromExport([])}
+                  className="mt-2 text-xs"
+                >
+                  Limpar seleção
+                </Button>
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setExportFilterDialog(false)}
+            >
+              Fechar
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Confirm Dialog */}
       <ConfirmDialog
