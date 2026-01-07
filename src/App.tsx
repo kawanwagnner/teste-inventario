@@ -10,6 +10,9 @@ import {
   X,
   Search,
   EyeOff,
+  BarChart3,
+  Clock,
+  Package,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -48,6 +51,27 @@ export type InventoryRow = {
 
 // === Helpers ===
 const STORAGE_KEY = "inventario_rows_v1";
+const METRICS_STORAGE_KEY = "inventario_metrics_v1";
+
+// Tipo para métricas
+type MetricsData = {
+  lastUpdated: number;
+  freeEquipmentCount: Record<string, number>;
+};
+
+function loadMetrics(): MetricsData | null {
+  try {
+    const raw = localStorage.getItem(METRICS_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as MetricsData;
+  } catch {
+    return null;
+  }
+}
+
+function saveMetrics(metrics: MetricsData) {
+  localStorage.setItem(METRICS_STORAGE_KEY, JSON.stringify(metrics));
+}
 
 function loadRows(): InventoryRow[] {
   try {
@@ -576,8 +600,37 @@ export default function App() {
     }
   });
 
+  // Modal de métricas
+  const [metricsDialog, setMetricsDialog] = useState(false);
+
+  // Métricas
+  const [lastUpdated, setLastUpdated] = useState<number | null>(() => {
+    const metrics = loadMetrics();
+    return metrics?.lastUpdated || null;
+  });
+
   // Opções de equipamentos pré-definidas
   const equipmentOptions = ["Notebook", "Mouse", "Teclado", "Fone", "Monitor"];
+
+  // Calcular equipamentos livres (sem usuário ou com usuário vazio/"-")
+  const freeEquipments = useMemo(() => {
+    const freeCount: Record<string, number> = {};
+    const freeItems: InventoryRow[] = [];
+
+    rows.forEach((r) => {
+      const isLivre =
+        !r.usuario ||
+        r.usuario.trim() === "" ||
+        r.usuario.trim() === "-" ||
+        r.usuario.toLowerCase() === "livre";
+      if (isLivre && r.equip) {
+        freeCount[r.equip] = (freeCount[r.equip] || 0) + 1;
+        freeItems.push(r);
+      }
+    });
+
+    return { count: freeCount, items: freeItems, total: freeItems.length };
+  }, [rows]);
 
   // Salvar lista de exclusão no localStorage
   useEffect(() => {
@@ -608,7 +661,35 @@ export default function App() {
   // Filtrar registros baseado na pesquisa
   const filteredRows = useMemo(() => {
     if (!searchTerm.trim()) return rows;
-    const term = searchTerm.toLowerCase();
+    const term = searchTerm.toLowerCase().trim();
+
+    // Verificar se é uma busca por "livre" ou "livre, [tipo]"
+    if (term.startsWith("livre")) {
+      // Extrair o tipo de equipamento se especificado (formato: "livre, tipo" ou "livre,tipo")
+      const commaIndex = term.indexOf(",");
+      const equipType =
+        commaIndex !== -1 ? term.substring(commaIndex + 1).trim() : null;
+
+      return rows.filter((r) => {
+        // Verificar se o item é "livre" (sem usuário)
+        const isLivre =
+          !r.usuario ||
+          r.usuario.trim() === "" ||
+          r.usuario.trim() === "-" ||
+          r.usuario.toLowerCase() === "livre";
+
+        if (!isLivre) return false;
+
+        // Se especificou um tipo, filtrar por ele também
+        if (equipType) {
+          return r.equip?.toLowerCase().includes(equipType);
+        }
+
+        return true;
+      });
+    }
+
+    // Busca normal
     return rows.filter(
       (r) =>
         r.usuario?.toLowerCase().includes(term) ||
@@ -639,7 +720,14 @@ export default function App() {
   // Autosave
   useEffect(() => {
     saveRows(rows);
-  }, [rows]);
+    // Atualizar timestamp e métricas
+    const now = Date.now();
+    setLastUpdated(now);
+    saveMetrics({
+      lastUpdated: now,
+      freeEquipmentCount: freeEquipments.count,
+    });
+  }, [rows, freeEquipments.count]);
 
   // Prevent data loss (before unload)
   useEffect(() => {
@@ -1025,7 +1113,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto p-3 space-y-4">
+      <main className="max-w-3xl mx-auto p-3 pb-20 space-y-4">
         {/* Stepper Card */}
         <Card className="border-neutral-200 shadow-sm">
           <CardHeader className="pb-2">
@@ -1545,6 +1633,123 @@ export default function App() {
             <Button
               variant="outline"
               onClick={() => setExportFilterDialog(false)}
+            >
+              Fechar
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Floating Action Button - Métricas */}
+      <button
+        onClick={() => setMetricsDialog(true)}
+        className="fixed bottom-6 right-6 z-50 w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg hover:shadow-xl transition-all flex items-center justify-center group"
+        title="Ver Métricas"
+      >
+        <BarChart3 className="w-6 h-6" />
+        {freeEquipments.total > 0 && (
+          <span className="absolute -top-1 -right-1 bg-green-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+            {freeEquipments.total}
+          </span>
+        )}
+      </button>
+
+      {/* Metrics Dialog */}
+      <Dialog open={metricsDialog} onOpenChange={setMetricsDialog}>
+        <DialogContent className="w-full max-w-md sm:max-w-lg h-dvh sm:h-auto sm:max-h-[85vh] max-sm:rounded-none max-sm:border-0 max-sm:translate-y-0 max-sm:top-0 max-sm:left-0 max-sm:translate-x-0 overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <BarChart3 className="w-5 h-5 text-blue-600" />
+              Métricas do Inventário
+            </DialogTitle>
+            <DialogDescription>
+              Visão geral dos equipamentos cadastrados
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6 py-4 flex-1 overflow-y-auto">
+            {/* Última atualização */}
+            <div className="flex items-center gap-3 p-3 bg-neutral-50 rounded-lg">
+              <Clock className="w-5 h-5 text-neutral-500" />
+              <div>
+                <p className="text-sm text-neutral-500">Última atualização</p>
+                <p className="font-medium text-neutral-800">
+                  {lastUpdated
+                    ? new Date(lastUpdated).toLocaleString("pt-BR")
+                    : "Nunca"}
+                </p>
+              </div>
+            </div>
+
+            {/* Total de registros */}
+            <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
+              <Database className="w-5 h-5 text-blue-600" />
+              <div>
+                <p className="text-sm text-blue-600">Total de registros</p>
+                <p className="font-bold text-2xl text-blue-700">
+                  {rows.length}
+                </p>
+              </div>
+            </div>
+
+            {/* Equipamentos Livres */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Package className="w-5 h-5 text-green-600" />
+                <span className="font-medium">Equipamentos Livres</span>
+                <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full text-xs font-medium">
+                  {freeEquipments.total} total
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {equipmentOptions.map((equip) => {
+                  const count = freeEquipments.count[equip] || 0;
+                  return (
+                    <button
+                      key={equip}
+                      onClick={() => {
+                        setSearchTerm(`livre, ${equip}`);
+                        setMetricsDialog(false);
+                      }}
+                      className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all active:scale-95 ${
+                        count > 0
+                          ? "bg-white border-green-200 hover:border-green-400 hover:bg-green-50 cursor-pointer shadow-sm"
+                          : "bg-neutral-50 border-neutral-200 text-neutral-400"
+                      }`}
+                    >
+                      <span
+                        className={`text-2xl font-bold ${
+                          count > 0 ? "text-green-600" : "text-neutral-400"
+                        }`}
+                      >
+                        {count}
+                      </span>
+                      <span className="text-sm text-neutral-600">{equip}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <p className="text-xs text-neutral-500 text-center">
+                Toque em um tipo para filtrar na lista
+              </p>
+            </div>
+
+            {/* Dica de busca */}
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              <p className="text-sm text-amber-800">
+                💡 <strong>Dica:</strong> No campo de busca, digite{" "}
+                <code className="bg-amber-100 px-1 rounded">
+                  livre, Notebook
+                </code>{" "}
+                para filtrar por tipo
+              </p>
+            </div>
+          </div>
+          <div className="flex justify-end pt-4 border-t">
+            <Button
+              onClick={() => setMetricsDialog(false)}
+              className="w-full sm:w-auto"
             >
               Fechar
             </Button>
